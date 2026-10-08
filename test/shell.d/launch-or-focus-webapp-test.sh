@@ -59,6 +59,33 @@ cat >"$TMPDIR/clients-browser-only.json" <<'JSON'
 ]
 JSON
 
+# A host must match completely: example.com is not example.com.au. The longer
+# host comes first so a prefix match would pick it.
+cat >"$TMPDIR/clients-subdomain.json" <<'JSON'
+[
+  {"address": "0xau", "class": "brave-example.com.au__-Default", "title": "Example AU"},
+  {"address": "0xexample", "class": "brave-example.com__-Default", "title": "Example"}
+]
+JSON
+
+# Two web apps on one host differ by path, and the path is part of the class.
+# The calendar window comes first so a host-only match would pick it for the
+# root-path binding.
+cat >"$TMPDIR/clients-samehost.json" <<'JSON'
+[
+  {"address": "0xcalendar", "class": "brave-app.hey.com__calendar_weeks_-Default", "title": "Calendar"},
+  {"address": "0xmail", "class": "brave-app.hey.com__-Default", "title": "Email"}
+]
+JSON
+
+# A bracketed IPv6 host is a valid --app target and must not become a broken
+# regex.
+cat >"$TMPDIR/clients-ipv6.json" <<'JSON'
+[
+  {"address": "0xipv6", "class": "brave-[::1]__-Default", "title": "Local"}
+]
+JSON
+
 run_webapp() {
   : >"$HYPRCTL_LOG"
   : >"$WEBAPP_LAUNCH_LOG"
@@ -102,9 +129,10 @@ grep -Fq 'https://web.whatsapp.com/' "$WEBAPP_LAUNCH_LOG" ||
   fail "the lookalike browser tab is focused instead of launching the web app"
 pass "a lookalike browser tab does not stop the web app from launching"
 
-# The class pattern is the URL's host, so a second web app on a different
-# Google host is neither matched nor shadowed.
-run_webapp "$TMPDIR/clients-google.json" "Google Maps" https://maps.google.com/
+# The class pattern is the URL's host and path, so a second web app on a
+# different Google host is neither matched nor shadowed. The URL here has no
+# trailing slash, which the browser adds, and the derived path defaults to one.
+run_webapp "$TMPDIR/clients-google.json" "Google Maps" https://maps.google.com
 grep -Fq 'address:0xmaps' "$HYPRCTL_LOG" ||
   fail "the Google Maps web app is not focused"
 ! grep -Fq 'address:0xphotos' "$HYPRCTL_LOG" ||
@@ -131,3 +159,35 @@ grep -Fq 'address:0xwhatsapp' "$HYPRCTL_LOG" ||
 ! grep -Fq 'address:0xbrowser' "$HYPRCTL_LOG" ||
   fail "--class falls back to matching titles"
 pass "--class matches the window class alone"
+
+# A binding for example.com must not focus example.com.au's window.
+run_webapp "$TMPDIR/clients-subdomain.json" Example https://example.com/
+grep -Fq 'address:0xexample' "$HYPRCTL_LOG" ||
+  fail "the host match does not require the complete host"
+! grep -Fq 'address:0xau' "$HYPRCTL_LOG" ||
+  fail "a longer host that starts with the requested one is focused"
+pass "a host matches completely rather than as a prefix"
+
+# Same host, different paths: each binding finds its own web app.
+run_webapp "$TMPDIR/clients-samehost.json" Calendar https://app.hey.com/calendar/weeks/
+grep -Fq 'address:0xcalendar' "$HYPRCTL_LOG" ||
+  fail "the calendar web app is not focused"
+! grep -Fq 'address:0xmail' "$HYPRCTL_LOG" ||
+  fail "the other web app on the same host wins the match"
+pass "the path in the URL keeps same-host web apps apart"
+
+run_webapp "$TMPDIR/clients-samehost.json" Email https://app.hey.com/
+grep -Fq 'address:0xmail' "$HYPRCTL_LOG" ||
+  fail "the root-path web app is not focused"
+! grep -Fq 'address:0xcalendar' "$HYPRCTL_LOG" ||
+  fail "a deeper path on the same host is matched for the root-path web app"
+pass "a root-path web app does not match a deeper path on the same host"
+
+# An IPv6 literal host parses into a usable class pattern instead of a broken
+# regex that leaves the open web app unfocused.
+run_webapp "$TMPDIR/clients-ipv6.json" Local http://[::1]:8080/
+grep -Fq 'address:0xipv6' "$HYPRCTL_LOG" ||
+  fail "an IPv6 web app window is not focused"
+[[ ! -s $WEBAPP_LAUNCH_LOG ]] ||
+  fail "an IPv6 web app is launched although its window already exists"
+pass "a bracketed IPv6 host is matched"

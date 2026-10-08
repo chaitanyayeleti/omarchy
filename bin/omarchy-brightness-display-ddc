@@ -9,7 +9,14 @@ step="${2:-}"
 
 [[ -n $monitor ]] || exit 1
 
-cache_dir="${XDG_RUNTIME_DIR:-/tmp}/omarchy-brightness-display-ddc"
+# The bus and range cache is read back to steer later ddcutil calls.
+# XDG_RUNTIME_DIR is 0700 and session-scoped; without it, the state directory
+# keeps the cache out of world-writable /tmp, where another local account could
+# plant a cache file and point brightness writes at a bus of their choosing.
+cache_dir="${XDG_RUNTIME_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy}/omarchy-brightness-display-ddc"
+if [[ -z ${XDG_RUNTIME_DIR:-} ]]; then
+  mkdir -p "$cache_dir" 2>/dev/null && chmod 700 "$cache_dir" 2>/dev/null
+fi
 cache_name="${monitor//[^[:alnum:]_.-]/_}"
 cache_file="$cache_dir/$cache_name.bus"
 unavailable_cache_seconds=60

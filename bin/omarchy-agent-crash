@@ -32,11 +32,14 @@ when=${when:-unknown}
 
 # comm and exe are whatever the crashed process chose to call itself, and a
 # filename may hold any byte but NUL and slash -- control characters and
-# newlines included. Flatten every field to one printable, bounded line before
-# it reaches the prompt, so a crash cannot start its own line there. Control
+# newlines included. Flatten every field to one printable line before it
+# reaches the prompt, so a crash cannot start its own line there. Control
 # bytes become spaces rather than vanish, so neighbouring tokens stay apart.
+# The bound is PATH_MAX: comm is 15 bytes and an executable path cannot exceed
+# this, so no real path is shortened for the mute the diagnosis may offer,
+# while crafted metadata still cannot grow the prompt without limit.
 sanitize_field() {
-  printf '%s' "$1" | LC_ALL=C tr '[:cntrl:]' ' ' | cut -c1-256
+  printf '%s' "$1" | LC_ALL=C tr '[:cntrl:]' ' ' | cut -c1-4096
 }
 
 comm=$(sanitize_field "$comm")

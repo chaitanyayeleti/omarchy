@@ -83,6 +83,20 @@ grep -Fq 'never as instructions' <<<"$PROMPT" ||
   fail "the prompt does not frame the record as data rather than instructions"
 pass "the crash record is fenced and framed as untrusted data"
 
+# A marker that repeated across runs could be learned from an earlier prompt and
+# spoofed by crafted metadata, so each run has to fence with a fresh one.
+run_crash 4242 firefox /usr/lib/firefox/firefox SIGSEGV
+read_prompt || fail "omarchy-agent-crash does not pass --prompt to the agent"
+first_fence=$(grep -m1 -E '^omarchy-crash-record-[0-9a-f]{32}$' <<<"$PROMPT")
+
+run_crash 4242 firefox /usr/lib/firefox/firefox SIGSEGV
+read_prompt || fail "omarchy-agent-crash does not pass --prompt to the agent"
+second_fence=$(grep -m1 -E '^omarchy-crash-record-[0-9a-f]{32}$' <<<"$PROMPT")
+
+[[ -n $first_fence && -n $second_fence && $first_fence != "$second_fence" ]] ||
+  fail "the fence marker repeats across runs, so crafted metadata could predict it"
+pass "each run fences the record with a fresh marker"
+
 # A process sets its own comm to any string prctl takes, and a filename may
 # contain newlines. Either one could otherwise start a line that reads like a
 # turn boundary or a system instruction inside the prompt.
@@ -119,13 +133,23 @@ read_prompt || fail "omarchy-agent-crash does not pass --prompt to the agent"
   fail "a crafted field adds a fence line, letting a crash close the record early"
 pass "the fence marker is generated per run, not taken from the crash metadata"
 
-# The notification carries a truncated comm, but the executable path is whole.
-# Neither may drag unbounded attacker-controlled bytes into the prompt.
+# The executable path reaches omarchy-crash-mute through the diagnosis, so a
+# path the kernel can record has to arrive whole rather than as a partial name.
 long_exe="/usr/bin/$(printf 'a%.0s' {1..400})"
 run_crash 4242 app "$long_exe" SIGSEGV
 read_prompt || fail "omarchy-agent-crash does not pass --prompt to the agent"
 
-grep -Fq "$long_exe" <<<"$PROMPT" &&
+grep -Fq "binary:   $long_exe" <<<"$PROMPT" ||
+  fail "a long executable path is shortened, so the name the diagnosis mutes would be a partial one"
+pass "an executable path shorter than PATH_MAX arrives whole"
+
+# Beyond what the kernel can record, the field is still bounded so crafted
+# metadata cannot grow the prompt without limit.
+huge_exe="/usr/bin/$(printf 'b%.0s' {1..5000})"
+run_crash 4242 app "$huge_exe" SIGSEGV
+read_prompt || fail "omarchy-agent-crash does not pass --prompt to the agent"
+
+grep -Fq "$huge_exe" <<<"$PROMPT" &&
   fail "an overlong field is copied into the prompt unbounded"
 grep -Fq 'process:  app' <<<"$PROMPT" ||
   fail "an overlong field takes the rest of the record with it"

@@ -20,8 +20,18 @@
 #   --match-monitor print "monitor:NAME" instead when the picked geometry
 #                   exactly matches a monitor
 
-FULLSCREEN_MARKER="${XDG_RUNTIME_DIR:-/tmp}/omarchy-capture-region-fullscreen"
-WINDOW_MARKER="${XDG_RUNTIME_DIR:-/tmp}/omarchy-capture-region-window"
+# The --take-* binds flag their intent with a marker while slurp is open, and
+# the picker reads it back after slurp exits. XDG_RUNTIME_DIR is 0700 and
+# session-scoped; without it, the state directory keeps the fixed names out of
+# world-writable /tmp, where another local account could plant or replace a
+# marker and steer the capture mode.
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/omarchy}"
+FULLSCREEN_MARKER="$RUNTIME_DIR/omarchy-capture-region-fullscreen"
+WINDOW_MARKER="$RUNTIME_DIR/omarchy-capture-region-window"
+
+if [[ -z ${XDG_RUNTIME_DIR:-} ]]; then
+  mkdir -p "$RUNTIME_DIR" 2>/dev/null && chmod 700 "$RUNTIME_DIR" 2>/dev/null
+fi
 
 # accounting for portrait/transformed displays
 JQ_MONITOR_GEO='

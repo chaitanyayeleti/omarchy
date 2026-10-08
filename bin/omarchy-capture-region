@@ -30,7 +30,13 @@ FULLSCREEN_MARKER="$RUNTIME_DIR/omarchy-capture-region-fullscreen"
 WINDOW_MARKER="$RUNTIME_DIR/omarchy-capture-region-window"
 
 if [[ -z ${XDG_RUNTIME_DIR:-} ]]; then
-  mkdir -p "$RUNTIME_DIR" 2>/dev/null && chmod 700 "$RUNTIME_DIR" 2>/dev/null
+  # XDG_STATE_HOME may be outside a private home; protect the fallback too. A
+  # failed setup must stop the picker here: a take bind would otherwise kill
+  # slurp without leaving a marker, and the empty result reads as a cancel.
+  if ! mkdir -p "$RUNTIME_DIR" 2>/dev/null || ! chmod 700 "$RUNTIME_DIR" 2>/dev/null; then
+    echo "Cannot create the region picker's state directory: $RUNTIME_DIR" >&2
+    exit 1
+  fi
 fi
 
 # accounting for portrait/transformed displays

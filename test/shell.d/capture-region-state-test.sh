@@ -26,6 +26,7 @@ SH
 
 cat >"$mock_bin/slurp" <<'SH'
 #!/bin/bash
+[[ -n ${SLURP_LOG:-} ]] && printf 'slurp\n' >>"$SLURP_LOG"
 [[ -n ${SLURP_TOUCH:-} ]] && touch "$SLURP_TOUCH"
 exit 0
 SH
@@ -53,6 +54,7 @@ chmod +x "$mock_bin"/*
 state_marker="$state_home/omarchy/omarchy-capture-region-fullscreen"
 window_marker="$state_home/omarchy/omarchy-capture-region-window"
 runtime_marker="$runtime_dir/omarchy-capture-region-fullscreen"
+slurp_log="$test_tmp/slurp-log"
 
 run_region() {
   HOME="$test_tmp/home" XDG_STATE_HOME="$state_home" PATH="$mock_bin:$ROOT/bin:$PATH" \
@@ -82,3 +84,17 @@ XDG_RUNTIME_DIR="$runtime_dir" run_region --take-fullscreen
 [[ -e $runtime_marker ]] || fail "the session runtime dir still holds the marker when it is set"
 [[ ! -e $state_marker ]] || fail "the state directory is not touched when a session runtime dir is set"
 pass "the session runtime dir takes precedence over the state directory"
+
+# A fallback directory that cannot be created must fail before the picker
+# opens: a take bind would otherwise kill slurp without leaving a marker, and
+# the empty result would read as a cancelled capture.
+blocked="$test_tmp/blocked"
+: >"$blocked"
+: >"$slurp_log"
+picker_rc=0
+error=$(HOME="$test_tmp/home" XDG_STATE_HOME="$blocked" XDG_RUNTIME_DIR= PATH="$mock_bin:$ROOT/bin:$PATH" \
+  "$ROOT/bin/omarchy-capture-region" smart 2>&1 >/dev/null) || picker_rc=$?
+(( picker_rc != 0 )) || fail "an unusable fallback state directory does not stop the picker"
+[[ $error == *"Cannot create"* ]] || fail "the unusable fallback state directory is not reported" "actual: $error"
+[[ ! -s $slurp_log ]] || fail "the picker opens slurp although its state directory is unusable"
+pass "an unusable fallback state directory fails before the picker opens"

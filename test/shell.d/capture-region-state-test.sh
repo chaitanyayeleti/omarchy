@@ -85,14 +85,22 @@ XDG_RUNTIME_DIR="$runtime_dir" run_region --take-fullscreen
 [[ ! -e $state_marker ]] || fail "the state directory is not touched when a session runtime dir is set"
 pass "the session runtime dir takes precedence over the state directory"
 
+blocked="$test_tmp/blocked"
+: >"$blocked"
+
+# Marker-free modes do not need the fallback directory at all: a read-only or
+# full state filesystem must not break a plain fullscreen request.
+geometry=$(HOME="$test_tmp/home" XDG_STATE_HOME="$blocked" XDG_RUNTIME_DIR= PATH="$mock_bin:$ROOT/bin:$PATH" \
+  "$ROOT/bin/omarchy-capture-region" fullscreen)
+[[ $geometry == "0,0 1920x1080" ]] || fail "fullscreen fails although it uses no markers" "actual: $geometry"
+pass "marker-free fullscreen mode works without a usable fallback directory"
+
 # A fallback directory that cannot be created must fail before the picker
 # opens: a take bind would otherwise kill slurp without leaving a marker, and
 # the empty result would read as a cancelled capture.
-blocked="$test_tmp/blocked"
-: >"$blocked"
 : >"$slurp_log"
 picker_rc=0
-error=$(HOME="$test_tmp/home" XDG_STATE_HOME="$blocked" XDG_RUNTIME_DIR= PATH="$mock_bin:$ROOT/bin:$PATH" \
+error=$(HOME="$test_tmp/home" XDG_STATE_HOME="$blocked" XDG_RUNTIME_DIR= SLURP_LOG="$slurp_log" PATH="$mock_bin:$ROOT/bin:$PATH" \
   "$ROOT/bin/omarchy-capture-region" smart 2>&1 >/dev/null) || picker_rc=$?
 (( picker_rc != 0 )) || fail "an unusable fallback state directory does not stop the picker"
 [[ $error == *"Cannot create"* ]] || fail "the unusable fallback state directory is not reported" "actual: $error"

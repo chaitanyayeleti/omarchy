@@ -149,8 +149,8 @@ huge_exe="/usr/bin/$(printf 'b%.0s' {1..5000})"
 run_crash 4242 app "$huge_exe" SIGSEGV
 read_prompt || fail "omarchy-agent-crash does not pass --prompt to the agent"
 
-grep -Fq "$huge_exe" <<<"$PROMPT" &&
-  fail "an overlong field is copied into the prompt unbounded"
+grep -qx "binary:   ${huge_exe:0:4096}" <<<"$PROMPT" ||
+  fail "an overlong field is not cut to its first 4096 bytes"
 grep -Fq 'process:  app' <<<"$PROMPT" ||
   fail "an overlong field takes the rest of the record with it"
 pass "an overlong field is bounded before it reaches the prompt"
